@@ -6,6 +6,8 @@ import 'package:taskwarrior/app/utils/themes/theme_extension.dart';
 class NavDrawerMenuItem extends StatelessWidget {
   final IconData icon;
   final String text;
+  final Color? iconColor;
+  final Color? textColor;
   final VoidCallback onTap;
 
   const NavDrawerMenuItem({
@@ -13,32 +15,33 @@ class NavDrawerMenuItem extends StatelessWidget {
     required this.icon,
     required this.text,
     required this.onTap,
+    this.iconColor,
+    this.textColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    TaskwarriorColorTheme tColors = Theme.of(context).extension<TaskwarriorColorTheme>()!;
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        color: tColors.dialogBackgroundColor,
-        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              color: tColors.primaryTextColor,
-            ),
-            const SizedBox(width: 10),
-            Text(
-              text,
-              style: TextStyle(
-                color: tColors.primaryTextColor,
-                fontSize: TaskWarriorFonts.fontSizeMedium,
-              ),
-            ),
-          ],
+    TaskwarriorColorTheme tColors =
+        Theme.of(context).extension<TaskwarriorColorTheme>()!;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      child: ListTile(
+        onTap: onTap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        leading: Icon(
+          icon,
+          color: iconColor,
         ),
+        title: Text(
+          text,
+          style: TextStyle(
+            color: textColor,
+            fontSize: TaskWarriorFonts.fontSizeMedium,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        splashColor: tColors.primaryTextColor!.withOpacity(0.1),
+        hoverColor: tColors.primaryTextColor!.withOpacity(0.05),
       ),
     );
   }
