@@ -8,6 +8,8 @@ import 'package:taskwarrior/app/utils/taskfunctions/datetime_differences.dart';
 import 'package:taskwarrior/app/utils/taskfunctions/modify.dart';
 import 'package:taskwarrior/app/utils/taskfunctions/urgency.dart';
 import 'package:taskwarrior/app/utils/themes/theme_extension.dart';
+import 'package:taskwarrior/app/utils/priority/priority.dart';
+import 'package:taskwarrior/app/widgets/pill.dart';
 
 class TaskListItem extends StatelessWidget {
   const TaskListItem(
@@ -27,199 +29,307 @@ class TaskListItem extends StatelessWidget {
   final bool useDelayTask;
   final SupportedLanguage selectedLanguage;
 
+  // ── Due state helpers ──────────────────────────────────────────────────────
+
+  bool _isDueWithinOneDay(DateTime due) {
+    final diff = due.difference(DateTime.now());
+    return diff.inDays < 1 && diff.inMicroseconds > 0;
+  }
+
+  bool _isOverdue(DateTime due) =>
+      due.difference(DateTime.now()).inMicroseconds < 0;
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
-    TaskwarriorColorTheme tColors = Theme.of(context).extension<TaskwarriorColorTheme>()!;
-    // ignore: unused_element
-    void saveChanges() async {
-      var now = DateTime.now().toUtc();
-      modify.save(
-        modified: () => now,
-      );
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-            SentenceManager(currentLanguage: selectedLanguage)
-                .sentences
-                .taskUpdated,
-            style: TextStyle(
-              color: tColors.primaryTextColor,
-            ),
-          ),
-          backgroundColor: tColors.secondaryBackgroundColor,
-          duration: const Duration(seconds: 2)));
+    final tColors = Theme.of(context).extension<TaskwarriorColorTheme>()!;
+
+    final bool isPending = task.status[0].toUpperCase() == 'P';
+    final p = getPriorityStyle(task.priority);
+    final sentences =
+        SentenceManager(currentLanguage: selectedLanguage).sentences;
+
+    final Color textColor = tColors.primaryTextColor!;
+    final Color subColor = tColors.dimCol!;
+
+    // Due urgency states
+    final bool overdue =
+        task.due != null && _isOverdue(task.due!) && useDelayTask;
+    final bool dueSoon =
+        task.due != null && _isDueWithinOneDay(task.due!) && useDelayTask;
+
+    // Left accent bar: priority color, overridden by due urgency
+    Color accentColor = p.accent;
+    if (dueSoon && !overdue) accentColor = const Color(0xFFFFA726);
+    if (overdue) accentColor = const Color(0xFFEF5350);
+
+    // Subtle card tint when overdue
+    final Color cardBg = overdue
+        ? const Color(0xFFEF5350).withOpacity(0.05)
+        : tColors.primaryBackgroundColor!;
+
+    // Urgency score → color ramp
+    final double urgencyVal = urgency(task);
+    Color urgencyColor;
+    if (urgencyVal >= 10) {
+      urgencyColor = const Color(0xFFEF5350);
+    } else if (urgencyVal >= 5) {
+      urgencyColor = const Color(0xFFFFA726);
+    } else {
+      urgencyColor = subColor.withOpacity(0.7);
     }
 
-    bool isDueWithinOneDay(DateTime dueDate) {
-      DateTime now = DateTime.now();
-      Duration difference = dueDate.difference(now);
-      return difference.inDays < 1 && difference.inMicroseconds > 0;
-    }
+    // Metadata strings
+    final String modifiedStr = task.modified != null
+        ? age(task.modified!)
+        : (task.start != null ? age(task.start!) : '-');
+    final String dueStr = task.due != null ? when(task.due!) : '-';
 
-    bool isOverDue(DateTime dueDate) {
-      DateTime now = DateTime.now();
-      Duration difference = dueDate.difference(now);
-      return difference.inMicroseconds < 0;
-    }
-
-    MaterialColor colours = Colors.grey;
-    Color colour =tColors.primaryTextColor!;
-    Color dimColor = tColors.dimCol!;
-    if (task.priority == 'H') {
-      colours = Colors.red;
-    } else if (task.priority == 'M') {
-      colours = Colors.yellow;
-    } else if (task.priority == 'L') {
-      colours = Colors.green;
-    }
-
-    if ((task.status[0].toUpperCase()) == 'P') {
-      // Pending tasks
-      return Container(
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: (task.due != null &&
-                    isDueWithinOneDay(task.due!) &&
-                    useDelayTask)
-                ? Colors
-                    .red // Set border color to red if due within 1 day and useDelayTask is true
-                : dimColor, // Set default border color
-          ),
-          borderRadius: BorderRadius.circular(8.0),
-          color: (task.due != null && isOverDue(task.due!) && useDelayTask)
-              ? Colors.red.withAlpha(50)
-              : tColors.primaryBackgroundColor,
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: overdue
+              ? const Color(0xFFEF5350).withOpacity(0.3)
+              : dueSoon
+                  ? const Color(0xFFFFA726).withOpacity(0.3)
+                  : subColor.withOpacity(0.12),
+          width: 1,
         ),
-        child: ListTile(
-          title: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: colours,
-                    radius: 8,
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: MediaQuery.of(context).size.width * 0.70,
-                    child: Text(
-                      '${(task.id == 0) ? '#' : task.id}. ${task.description}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      // style: GoogleFonts.poppins(
-                      //   color: colour,
-                      // ),
-                      style: TextStyle(
-                          fontFamily: FontFamily.poppins, color: colour),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          splashColor: accentColor.withOpacity(0.06),
+          highlightColor: accentColor.withOpacity(0.04),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ── Left accent bar ──────────────────────────────────────
+                Container(
+                  width: 4,
+                  decoration: BoxDecoration(
+                    color: accentColor,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(12),
+                      bottomLeft: Radius.circular(12),
                     ),
                   ),
-                ],
-              ),
-              Text(
-                (task.annotations != null)
-                    ? ' [${task.annotations!.length}]'
-                    : '',
-                // style: GoogleFonts.poppins(
-                //   color: colour,
-                // ),
-                style: TextStyle(fontFamily: FontFamily.poppins, color: colour),
-              ),
-            ],
-          ),
-          subtitle: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Flexible(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Text(
-                    '${pendingFilter ? '' : '${task.status[0].toUpperCase()}\n'}'
-                            '${SentenceManager(currentLanguage: selectedLanguage).sentences.homePageLastModified} : ${(task.modified != null) ? age(task.modified!) : ((task.start != null) ? age(task.start!) : '-')} | '
-                            '${SentenceManager(currentLanguage: selectedLanguage).sentences.homePageDue} : ${(task.due != null) ? when(task.due!) : '-'}'
-                        .replaceFirst(RegExp(r' \[\]$'), '')
-                        .replaceAll(RegExp(r' +'), ' '),
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontFamily: FontFamily.poppins,
-                        color: dimColor,
-                        fontSize: TaskWarriorFonts.fontSizeSmall),
-                  ),
                 ),
-              ),
-              Text(
-                formatUrgency(urgency(task)),
-                // style: GoogleFonts.poppins(
-                //   color: colour,
-                // ),
-                style: TextStyle(fontFamily: FontFamily.poppins, color: colour),
-              ),
-            ],
-          ),
-        ),
-      );
-    } else {
-      // Completed tasks
-      return ListTile(
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: colours,
-                  radius: 8,
-                ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  width: MediaQuery.of(context).size.width * 0.65,
-                  child: Text(
-                    '${(task.id == 0) ? '#' : task.id}. ${task.description}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    // style: GoogleFonts.poppins(
-                    //   color: colour,
-                    // ),
-                    style: TextStyle(
-                        fontFamily: FontFamily.poppins, color: colour),
+
+                // ── Card content ─────────────────────────────────────────
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // ── Row 1: Task ID + description + annotation count
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // ID badge
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: accentColor.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: Text(
+                                '#${task.id == 0 ? '-' : task.id}',
+                                style: TextStyle(
+                                  fontFamily: FontFamily.poppins,
+                                  fontSize: 10,
+                                  fontWeight: TaskWarriorFonts.semiBold,
+                                  color: accentColor,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+
+                            // Description
+                            Expanded(
+                              child: Text(
+                                task.description,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: FontFamily.poppins,
+                                  fontSize: 13.5,
+                                  fontWeight: isPending
+                                      ? TaskWarriorFonts.medium
+                                      : TaskWarriorFonts.regular,
+                                  color: isPending
+                                      ? textColor
+                                      : textColor.withOpacity(0.45),
+                                  decoration: isPending
+                                      ? TextDecoration.none
+                                      : TextDecoration.lineThrough,
+                                  decorationColor: subColor.withOpacity(0.4),
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+
+                            // Annotation count
+                            if (task.annotations != null &&
+                                task.annotations!.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Pill(
+                                label: '${task.annotations!.length}',
+                                bg: subColor.withOpacity(0.1),
+                                fg: subColor,
+                                icon: Icons.comment_outlined,
+                              ),
+                            ],
+                          ],
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        // ── Row 2: Priority pill + due badge + urgency score
+                        Row(
+                          children: [
+                            Pill(
+                              label: p.label,
+                              bg: p.chipBg,
+                              fg: p.chipFg,
+                            ),
+                            const SizedBox(width: 6),
+
+                            if (overdue)
+                              Pill(
+                                label: 'Overdue',
+                                bg: const Color(0x15EF5350),
+                                fg: const Color(0xFFEF5350),
+                                icon: Icons.warning_amber_rounded,
+                              )
+                            else if (dueSoon)
+                              Pill(
+                                label: 'Due soon',
+                                bg: const Color(0x15FFA726),
+                                fg: const Color(0xFFFFA726),
+                                icon: Icons.schedule_rounded,
+                              ),
+
+                            const Spacer(),
+
+                            // Urgency value
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.bolt_rounded,
+                                  size: 12,
+                                  color: Colors.white,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  formatUrgency(urgencyVal),
+                                  style: TextStyle(
+                                    fontFamily: FontFamily.poppins,
+                                    fontSize: 11,
+                                    fontWeight: TaskWarriorFonts.semiBold,
+                                    color: Colors.white,
+                                    letterSpacing: 0.1,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 7),
+
+                        // ── Row 3: Modified + Due metadata ────────────────
+                        Row(
+                          children: [
+                            // Modified
+                            Icon(
+                              Icons.edit_outlined,
+                              size: 11,
+                              color: subColor.withOpacity(0.5),
+                            ),
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                modifiedStr,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: FontFamily.poppins,
+                                  fontSize: TaskWarriorFonts.fontSizeSmall,
+                                  color: subColor.withOpacity(0.6),
+                                ),
+                              ),
+                            ),
+
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 7),
+                              child: Text(
+                                '·',
+                                style: TextStyle(
+                                  fontFamily: FontFamily.poppins,
+                                  color: subColor.withOpacity(0.25),
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+
+                            // Due
+                            Icon(
+                              Icons.calendar_today_outlined,
+                              size: 11,
+                              color: overdue
+                                  ? const Color(0xFFEF5350).withOpacity(0.6)
+                                  : subColor.withOpacity(0.5),
+                            ),
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                dueStr,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: FontFamily.poppins,
+                                  fontSize: TaskWarriorFonts.fontSizeSmall,
+                                  color: overdue
+                                      ? const Color(0xFFEF5350)
+                                          .withOpacity(0.75)
+                                      : subColor.withOpacity(0.6),
+                                ),
+                              ),
+                            ),
+
+                            // Status badge — shown for completed/waiting tasks
+                            if (!pendingFilter && !isPending) ...[
+                              const Spacer(),
+                              Pill(
+                                label: task.status[0].toUpperCase() +
+                                    task.status.substring(1).toLowerCase(),
+                                bg: subColor.withOpacity(0.08),
+                                fg: subColor.withOpacity(0.55),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
             ),
-          ],
+          ),
         ),
-        subtitle: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Flexible(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Text(
-                  '${SentenceManager(currentLanguage: selectedLanguage).sentences.homePageLastModified} :${(task.modified != null) ? age(task.modified!) : ((task.start != null) ? age(task.start!) : '-')} | '
-                          '${SentenceManager(currentLanguage: selectedLanguage).sentences.homePageDue} : ${(task.due != null) ? when(task.due!) : '-'}'
-                      .replaceFirst(RegExp(r' \[\]$'), '')
-                      .replaceAll(RegExp(r' +'), ' '),
-                  overflow: TextOverflow.ellipsis,
-                  // style: GoogleFonts.poppins(
-                  //   color: dimColor,
-                  //   fontSize: TaskWarriorFonts.fontSizeSmall,
-                  // ),
-                  style: TextStyle(
-                      fontFamily: FontFamily.poppins,
-                      color: dimColor,
-                      fontSize: TaskWarriorFonts.fontSizeSmall),
-                ),
-              ),
-            ),
-            Text(
-              formatUrgency(urgency(task)),
-              // style: GoogleFonts.poppins(
-              //   color: colour,
-              // ),
-              style: TextStyle(fontFamily: FontFamily.poppins, color: colour),
-            ),
-          ],
-        ),
-      );
-    }
+      ),
+    );
   }
 }
